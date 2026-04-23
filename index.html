@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>EduQuiz AI Blue GitHub v4.5 Final</title>
+    <title>EduQuiz AI Blue GitHub v4.6 Real Final</title>
 
     <!-- 필수 라이브러리 로드 -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -90,14 +90,14 @@
                         }));
                     setUnits(htmlFiles);
                 } catch (err) {
-                    setStatus({ type: 'error', text: "자료 로딩 실패 (잠시 후 다시 시도)" });
+                    setStatus({ type: 'error', text: "자료 목록 로딩 실패" });
                 } finally { setLoading(false); }
             };
 
             const generateQuiz = async () => {
                 if (!selectedUnit) return;
                 setLoading(true);
-                setStatus({ type: 'info', text: "AI 선생님이 문제를 만드는 중..." });
+                setStatus({ type: 'info', text: "AI가 문제를 생성하고 있습니다..." });
                 
                 try {
                     // 1. 깃허브 원문 읽기
@@ -106,22 +106,21 @@
                         const altUrl = selectedUnit.rawUrl.replace('/main/', '/master/');
                         textResponse = await fetch(altUrl);
                     }
-                    if (!textResponse.ok) throw new Error("자료 파일을 찾을 수 없습니다.");
+                    if (!textResponse.ok) throw new Error("자료 파일을 읽을 수 없습니다.");
                     const rawContent = await textResponse.text();
 
-                    // 2. [초기 성공 로직 복원] 질문 안에 모든 것을 담는 형태
-                    const finalPrompt = `당신은 유능한 보건간호과 선생님입니다. 
-다음 제공된 학습 자료의 핵심 내용을 분석하여 학생들을 위한 5지선다형 퀴즈 5개를 만들어주세요.
+                    // 2. [초기 성공 로직 복원] 가장 단순한 대화형 프롬프트
+                    const finalPrompt = `당신은 보건간호과 선생님입니다. 
+제공된 학습 자료를 분석하여 학생들을 위한 5지선다형 퀴즈 5개를 만드세요.
+반드시 다른 설명 없이 아래의 JSON 배열 형식으로만 응답하세요.
 
 [학습 자료 내용]
 ${rawContent.substring(0, 15000)}
 
-[작성 규칙 - 절대 엄수]
-1. 반드시 아래의 순수한 JSON 데이터 형식으로만 응답하세요.
-2. 앞뒤에 불필요한 설명이나 마크다운 기호(\`\`\`)를 넣지 마세요.
-3. 형식: [{"id":1,"question":"문제내용","options":["1번보기","2번보기","3번보기","4번보기","5번보기"],"correctAnswer":0,"explanation":"정답설명"}]`;
+[JSON 응답 형식]
+[{"id":1,"question":"질문내용","options":["보기1","보기2","보기3","보기4","보기5"],"correctAnswer":0,"explanation":"정답해설"}]`;
 
-                    // 3. [가장 안정적인 v1beta 호출]
+                    // 3. [에러 방지를 위한 최적의 엔드포인트] v1beta + 단일 contents
                     const apiURL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${geminiApiKey}`;
                     
                     const aiResponse = await fetch(apiURL, {
@@ -137,15 +136,14 @@ ${rawContent.substring(0, 15000)}
                     const resultData = await aiResponse.json();
                     
                     if (!aiResponse.ok) {
-                        // 에러가 났을 경우 v1으로 자동 재시도하는 보험 장치
-                        throw new Error(resultData.error?.message || "서버 응답 지연");
+                        throw new Error(resultData.error?.message || "AI 서버 통신 오류");
                     }
 
                     const rawText = resultData.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (!rawText) throw new Error("문제가 생성되지 않았습니다.");
+                    if (!rawText) throw new Error("응답이 비어있습니다.");
 
-                    // [결과 정제 강화] 어떤 지저분한 텍스트가 섞여도 JSON만 추출
-                    const jsonMatch = rawText.match(/\[\s*\{.*\}\s*\]/s);
+                    // [철벽 JSON 필터] 대괄호 사이의 데이터만 쏙 골라냄
+                    const jsonMatch = rawText.match(/\[.*\]/s);
                     const cleanJson = jsonMatch ? jsonMatch[0] : rawText.replace(/```json/gi, "").replace(/```/gi, "").trim();
                     
                     setCurrentQuestions(JSON.parse(cleanJson));
@@ -155,8 +153,8 @@ ${rawContent.substring(0, 15000)}
                     setStartTime(Date.now()); 
                     setStatus(null);
                 } catch (err) { 
-                    console.error("Critical AI Error:", err);
-                    setStatus({ type: 'error', text: `AI가 자료를 읽는 중 오류가 발생했습니다. 다시 클릭해 주세요.` }); 
+                    console.error("AI Error Details:", err);
+                    setStatus({ type: 'error', text: `AI 오류: 다시 한 번 클릭해 주세요.` }); 
                 } finally { setLoading(false); }
             };
 
@@ -164,7 +162,7 @@ ${rawContent.substring(0, 15000)}
                 <header className="bg-white/90 backdrop-blur-md border-b border-blue-100 px-6 py-4 flex justify-between items-center sticky top-0 z-50 shrink-0 shadow-sm">
                     <div className="flex items-center gap-2 cursor-pointer" onClick={() => { setView('landing'); setStatus(null); }}>
                         <div className="bg-blue-500 p-2 rounded-2xl text-white shadow-lg"><Icon name="github" size={20} /></div>
-                        <h1 className="text-lg font-black text-blue-600 tracking-tighter leading-none italic">EduQuiz <span className="text-teal-400 not-italic uppercase text-[10px]">Blue v4.5</span></h1>
+                        <h1 className="text-lg font-black text-blue-600 tracking-tighter leading-none italic">EduQuiz <span className="text-teal-400 not-italic uppercase text-[10px]">Blue v4.6</span></h1>
                     </div>
                     {status && (
                         <div className={`fixed top-20 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl font-bold text-[10px] z-[200] animate-bounce border-2 ${status.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-500' : 'bg-blue-50 border-blue-200 text-blue-500'}`}>
@@ -179,10 +177,10 @@ ${rawContent.substring(0, 15000)}
                 <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
                     <div className="bg-white p-12 rounded-[5rem] shadow-2xl border-8 border-blue-50 w-full max-w-sm relative overflow-hidden">
                         <div className="bg-blue-500 w-20 h-20 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 text-white shadow-xl shadow-blue-100 animate-pulse">
-                            <Icon name="sparkles" size={40} fill="currentColor" />
+                            <Icon name="award" size={40} fill="currentColor" />
                         </div>
                         <h2 className="text-4xl font-black mb-4 text-slate-800 leading-tight tracking-tighter">간호의 기초<br/><span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-teal-400">GitHub AI 퀴즈</span></h2>
-                        <p className="text-slate-400 font-bold mb-14 text-[10px] tracking-[0.3em] uppercase italic opacity-70 leading-none">Blue Edition v4.5 Final ✨</p>
+                        <p className="text-slate-400 font-bold mb-14 text-[10px] tracking-[0.3em] uppercase italic opacity-70 leading-none">Real Final v4.6 ✨</p>
                         <button onClick={() => setView('student_setup')} className="w-full blue-gradient p-7 rounded-[2.5rem] text-white font-black flex items-center justify-center gap-4 transition-all shadow-xl shadow-blue-100 active:scale-95">
                             <Icon name="play" fill="currentColor" /> 학습 시작하기
                         </button>
@@ -195,7 +193,7 @@ ${rawContent.substring(0, 15000)}
                     <Header />
                     <main className="max-w-xl w-full p-6 space-y-10">
                         <div className="bg-white rounded-[4rem] p-10 shadow-2xl border-8 border-white space-y-8">
-                            <h2 className="text-3xl font-black text-slate-700 italic tracking-tighter text-center leading-none">GitHub Study ✨</h2>
+                            <h2 className="text-3xl font-black text-slate-700 italic tracking-tighter text-center">GitHub Study ✨</h2>
                             <section className="text-left space-y-4">
                                 <h4 className="text-[12px] font-black text-blue-500 uppercase tracking-widest flex items-center gap-2"><Icon name="list" size={16} /> 학습할 단원을 선택하세요</h4>
                                 <div className="grid gap-2 max-h-80 overflow-y-auto custom-scrollbar pr-1">
@@ -240,7 +238,7 @@ ${rawContent.substring(0, 15000)}
                         </main>
                         <footer className="p-8 border-t border-blue-50 bg-white shrink-0 text-center flex flex-col items-center">
                             <div className="max-w-lg w-full flex gap-4 text-center">
-                                <button disabled={currentQuestionIndex === 0} onClick={() => setCurrentQuestionIndex(p => p - 1)} className="flex-1 py-5 bg-slate-50 text-slate-300 font-bold rounded-2xl text-center">이전</button>
+                                <button disabled={currentQuestionIndex === 0} onClick={() => setCurrentQuestionIndex(p => p - 1)} className="flex-1 py-5 bg-slate-50 text-slate-300 font-black text-sm uppercase rounded-2xl">이전</button>
                                 {currentQuestionIndex === currentQuestions.length - 1 ? 
                                     <button onClick={() => { const s = currentQuestions.filter((q, i) => answers[i] === q.correctAnswer).length; setQuizResults({ score: s, total: currentQuestions.length, percentage: Math.round((s/currentQuestions.length)*100) }); setView('result'); }} disabled={answers[currentQuestionIndex] === undefined} className="flex-[2] blue-gradient text-white py-5 rounded-[2rem] font-black text-xl shadow-lg active:scale-95 text-center">결과 확인</button> :
                                     <button onClick={() => setCurrentQuestionIndex(p => p + 1)} disabled={answers[currentQuestionIndex] === undefined} className="flex-[2] bg-slate-800 text-white py-5 rounded-[2rem] font-black text-xl active:scale-95 text-center">다음 문제</button>
@@ -256,7 +254,7 @@ ${rawContent.substring(0, 15000)}
                     <Header />
                     <main className="w-full max-w-md p-6 space-y-6 overflow-y-auto pb-24 text-center">
                         <div className="bg-white rounded-[4rem] shadow-2xl p-10 text-center border-8 border-white">
-                            <div className="bg-yellow-300 w-24 h-24 rounded-[2rem] flex items-center justify-center mx-auto mb-8 text-white shadow-xl animate-bounce text-center"><Icon name="award" size={50} /></div>
+                            <div className="bg-yellow-300 w-24 h-24 rounded-[2rem] flex items-center justify-center mx-auto mb-8 text-white shadow-xl animate-bounce text-center shadow-yellow-100"><Icon name="star" size={50} fill="currentColor" /></div>
                             <h2 className="text-7xl font-black mb-2 text-slate-800 tracking-tighter text-center">{quizResults?.percentage}%</h2>
                             <p className="font-black text-blue-500 text-xl mb-10 text-center">{quizResults?.score} / {quizResults?.total} 맞힘!</p>
                             <div className="space-y-6 text-left mb-10 border-t border-blue-50 pt-8 text-left">
