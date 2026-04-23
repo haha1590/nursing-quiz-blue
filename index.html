@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>EduQuiz AI Blue GitHub v4.2 Final</title>
+    <title>EduQuiz AI Blue GitHub v4.3 Final</title>
 
     <!-- 필수 라이브러리 로드 -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -29,7 +29,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        // --- Firebase Config ---
+        // --- Firebase Config (인증 유지) ---
         const firebaseConfig = {
             apiKey: "AIzaSyBuKO5Iia70QyrgrXGgRqJsLChHhHMFREg",
             authDomain: "edu-quiz-lovely.firebaseapp.com",
@@ -97,52 +97,62 @@
             const generateQuiz = async () => {
                 if (!selectedUnit) return;
                 setLoading(true);
-                setStatus({ type: 'info', text: "AI가 자료를 분석하고 있습니다..." });
+                setStatus({ type: 'info', text: "AI가 자료를 분석하여 문제를 만드는 중..." });
                 
                 try {
+                    // 1. 깃허브에서 텍스트 데이터 가져오기
                     let textResponse = await fetch(selectedUnit.rawUrl);
                     if (!textResponse.ok) {
                         const altUrl = selectedUnit.rawUrl.replace('/main/', '/master/');
                         textResponse = await fetch(altUrl);
                     }
-                    if (!textResponse.ok) throw new Error("파일 읽기 실패");
+                    if (!textResponse.ok) throw new Error("자료 파일을 읽을 수 없습니다.");
                     const rawContent = await textResponse.text();
 
-                    // 명령어 통합 방식: v39 성공 로직
-                    const instructions = "당신은 보건간호과 선생님입니다. 제공된 자료로 5지선다형 퀴즈 5개를 만드세요. 반드시 순수 JSON 배열 형식으로만 응답하세요: [{\"id\":1,\"question\":\"질문\",\"options\":[\"1\",\"2\",\"3\",\"4\",\"5\"],\"correctAnswer\":0,\"explanation\":\"해설\"}]";
-                    
-                    const contents = [{
-                        parts: [
-                            { text: instructions },
-                            { text: `학습 자료 내용:\n${rawContent.substring(0, 15000)}` },
-                            { text: "위 자료를 바탕으로 퀴즈를 생성해줘." }
-                        ]
-                    }];
+                    // 2. [핵심 해결책] 모든 지시사항을 '대화내용'에 통합하여 서버 오류 원천 차단
+                    const fullPrompt = `당신은 친절한 보건간호과 선생님입니다. 
+다음 제공된 학습 자료 내용을 분석하여 학생들을 위한 5지선다형 퀴즈 5개를 만들어주세요.
 
-                    // [핵심 수정] v1beta 엔드포인트로 복구하여 "v1 not found" 에러 해결
-                    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${geminiApiKey}`, {
+[학습 자료 내용]
+${rawContent.substring(0, 15000)}
+
+[요구 사항]
+1. 반드시 아래의 순수 JSON 배열 형식으로만 응답하세요.
+2. 다른 설명이나 'json'이라는 텍스트, 마크다운 기호(\`\`\`)는 절대 포함하지 마세요.
+3. 형식: [{"id":1,"question":"질문내용","options":["보기1","보기2","보기3","보기4","보기5"],"correctAnswer":0,"explanation":"정답해설"}]`;
+
+                    // [핵심 해결책] v1 정식 엔드포인트 사용 & 복잡한 옵션 필드 모두 제거
+                    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1/models/${MODEL_NAME}:generateContent?key=${geminiApiKey}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ contents })
+                        body: JSON.stringify({ 
+                            contents: [{ 
+                                parts: [{ text: fullPrompt }] 
+                            }] 
+                        })
                     });
                     
                     const resultData = await aiResponse.json();
                     
                     if (!aiResponse.ok) {
-                        throw new Error(resultData.error?.message || "AI 서버 통신 오류");
+                        throw new Error(resultData.error?.message || "AI 서버 응답 오류");
                     }
 
                     const rawText = resultData.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!rawText) throw new Error("AI가 문제를 생성하지 못했습니다.");
+
+                    // JSON 데이터만 정밀하게 추출
                     const cleanJson = rawText.replace(/```json/gi, "").replace(/```/gi, "").trim();
+                    const parsedQuestions = JSON.parse(cleanJson);
                     
-                    setCurrentQuestions(JSON.parse(cleanJson));
+                    setCurrentQuestions(parsedQuestions);
                     setCurrentQuestionIndex(0); 
                     setAnswers({}); 
                     setView('quiz'); 
                     setStartTime(Date.now()); 
                     setStatus(null);
                 } catch (err) { 
-                    console.error(err);
+                    console.error("Critical AI Error:", err);
                     setStatus({ type: 'error', text: `AI 오류: ${err.message}` }); 
                 } finally { setLoading(false); }
             };
@@ -151,7 +161,7 @@
                 <header className="bg-white/90 backdrop-blur-md border-b border-blue-100 px-6 py-4 flex justify-between items-center sticky top-0 z-50 shrink-0 shadow-sm">
                     <div className="flex items-center gap-2 cursor-pointer" onClick={() => { setView('landing'); setStatus(null); }}>
                         <div className="bg-blue-500 p-2 rounded-2xl text-white shadow-lg"><Icon name="github" size={20} /></div>
-                        <h1 className="text-lg font-black text-blue-600 tracking-tighter leading-none italic">EduQuiz <span className="text-teal-400 not-italic uppercase text-[10px]">Blue v4.2</span></h1>
+                        <h1 className="text-lg font-black text-blue-600 tracking-tighter leading-none italic">EduQuiz <span className="text-teal-400 not-italic uppercase text-[10px]">Blue v4.3</span></h1>
                     </div>
                     {status && (
                         <div className={`fixed top-20 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl font-bold text-[10px] z-[200] animate-bounce border-2 ${status.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-500' : 'bg-blue-50 border-blue-200 text-blue-500'}`}>
@@ -164,13 +174,13 @@
 
             if (view === 'landing') return (
                 <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
-                    <div className="bg-white p-12 rounded-[5rem] shadow-2xl border-8 border-blue-50 w-full max-w-sm relative overflow-hidden text-center">
+                    <div className="bg-white p-12 rounded-[5rem] shadow-2xl border-8 border-blue-50 w-full max-w-sm relative overflow-hidden">
                         <div className="bg-blue-500 w-20 h-20 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 text-white shadow-xl shadow-blue-100 animate-pulse">
-                            <Icon name="book-open" size={40} />
+                            <Icon name="zap" size={40} fill="currentColor" />
                         </div>
-                        <h2 className="text-4xl font-black mb-4 text-slate-800 leading-tight tracking-tighter text-center">간호의 기초<br/><span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-teal-400 text-center">GitHub AI 퀴즈</span></h2>
-                        <p className="text-slate-400 font-bold mb-14 text-[10px] tracking-[0.3em] uppercase italic opacity-70 leading-none text-center">Blue Edition v4.2 Final ✨</p>
-                        <button onClick={() => setView('student_setup')} className="w-full blue-gradient p-7 rounded-[2.5rem] text-white font-black flex items-center justify-center gap-4 transition-all shadow-xl shadow-blue-100 active:scale-95 text-center">
+                        <h2 className="text-4xl font-black mb-4 text-slate-800 leading-tight tracking-tighter">간호의 기초<br/><span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-teal-400">GitHub AI 퀴즈</span></h2>
+                        <p className="text-slate-400 font-bold mb-14 text-[10px] tracking-[0.3em] uppercase italic opacity-70 leading-none">Blue Edition v4.3 Final ✨</p>
+                        <button onClick={() => setView('student_setup')} className="w-full blue-gradient p-7 rounded-[2.5rem] text-white font-black flex items-center justify-center gap-4 transition-all shadow-xl shadow-blue-100 active:scale-95">
                             <Icon name="play" fill="currentColor" /> 학습 시작하기
                         </button>
                     </div>
@@ -184,19 +194,19 @@
                         <div className="bg-white rounded-[4rem] p-10 shadow-2xl border-8 border-white space-y-8">
                             <h2 className="text-3xl font-black text-slate-700 italic tracking-tighter text-center">GitHub Study ✨</h2>
                             <section className="text-left space-y-4">
-                                <h4 className="text-[12px] font-black text-blue-500 uppercase tracking-widest flex items-center gap-2 text-left"><Icon name="list" size={16} /> 학습할 단원을 선택하세요</h4>
+                                <h4 className="text-[12px] font-black text-blue-500 uppercase tracking-widest flex items-center gap-2"><Icon name="list" size={16} /> 학습할 단원을 선택하세요</h4>
                                 <div className="grid gap-2 max-h-80 overflow-y-auto custom-scrollbar pr-1">
                                     {units.length === 0 ? (
-                                        <div className="text-center py-20 text-slate-300 font-bold italic text-center">자료를 불러오는 중입니다...</div>
+                                        <div className="text-center py-20 text-slate-300 font-bold italic">자료를 불러오는 중입니다...</div>
                                     ) : units.map(u => (
                                         <button key={u.id} onClick={() => setSelectedUnit(u)} className={`text-left px-6 py-5 rounded-[2.2rem] border-4 transition-all font-bold flex items-center justify-between group ${selectedUnit?.id === u.id ? 'border-blue-300 bg-blue-50 text-blue-600 shadow-lg' : 'border-slate-50 bg-slate-50/50 hover:border-blue-100 shadow-sm'}`}>
-                                            <span className="text-left">{u.title}</span>
+                                            <span>{u.title}</span>
                                             {selectedUnit?.id === u.id && <Icon name="check" className="text-blue-500" size={18}/>}
                                         </button>
                                     ))}
                                 </div>
                             </section>
-                            <button onClick={generateQuiz} disabled={!selectedUnit || loading} className={`w-full py-7 rounded-[2.5rem] font-black text-xl shadow-2xl transition-all ${loading ? 'bg-slate-100 text-slate-300' : 'blue-gradient text-white active:scale-95 shadow-blue-100 text-center'}`}>
+                            <button onClick={generateQuiz} disabled={!selectedUnit || loading} className={`w-full py-7 rounded-[2.5rem] font-black text-xl shadow-2xl transition-all ${loading ? 'bg-slate-100 text-slate-300' : 'blue-gradient text-white active:scale-95 shadow-blue-100'}`}>
                                 {loading ? 'AI 자료 분석 중...' : '퀴즈 생성 & 시작 ✨'}
                             </button>
                         </div>
@@ -215,12 +225,12 @@
                             <div className="px-3 py-1 bg-blue-500 text-white rounded-xl text-xs font-bold">{Math.floor((Date.now() - startTime)/1000)}s</div>
                         </header>
                         <main className="flex-1 p-8 flex flex-col items-center justify-center space-y-10 overflow-y-auto">
-                            <h2 className="text-2xl font-black text-slate-700 text-center leading-snug max-w-lg text-left">{q.question}</h2>
+                            <h2 className="text-2xl font-black text-slate-700 text-center leading-snug max-w-lg">{q.question}</h2>
                             <div className="w-full max-w-lg space-y-4">
                                 {q.options.map((opt, i) => (
                                     <button key={i} onClick={() => setAnswers({...answers, [currentQuestionIndex]: i})} className={`w-full text-left p-6 rounded-[2.5rem] border-4 transition-all font-bold text-lg flex items-center gap-5 ${answers[currentQuestionIndex] === i ? 'border-blue-400 bg-pink-50 text-blue-600 shadow-md' : 'border-slate-50 bg-slate-50 hover:border-blue-100 shadow-sm'}`}>
                                         <div className={`w-12 h-12 rounded-full flex items-center justify-center font-black shrink-0 ${answers[currentQuestionIndex] === i ? 'bg-blue-500 text-white' : 'bg-slate-700 text-white'}`}>{i + 1}</div>
-                                        <span className="text-left">{opt}</span>
+                                        <span>{opt}</span>
                                     </button>
                                 ))}
                             </div>
