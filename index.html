@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>EduQuiz AI Blue GitHub v5.0</title>
+    <title>EduQuiz AI Blue GitHub v5.1</title>
 
-    <!-- 필수 라이브러리 -->
+    <!-- 필수 라이브러리 로드 -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -29,7 +29,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        // --- Firebase Config ---
+        // --- Firebase Config (인증 전용) ---
         const firebaseConfig = {
             apiKey: "AIzaSyBuKO5Iia70QyrgrXGgRqJsLChHhHMFREg",
             authDomain: "edu-quiz-lovely.firebaseapp.com",
@@ -42,6 +42,7 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         
+        // --- 🧠 AI & GitHub 설정 ---
         const geminiApiKey = "AIzaSyALNeGgRQZz1Z1D1aNW_RX0ZHHg1_pPtlM";
         const GITHUB_REPO = "haha1590/nursing-study"; 
 
@@ -86,85 +87,86 @@
                         }));
                     setUnits(htmlFiles);
                 } catch (err) {
-                    setStatus({ type: 'error', text: "자료 목록 로딩 실패" });
+                    setStatus({ type: 'error', text: "자료 목록을 불러오지 못했습니다." });
                 } finally { setLoading(false); }
             };
 
-            // [핵심] 지능형 AI 호출 함수 - 실패 시 주소를 바꿔가며 스스로 재시도함
-            const callGeminiAI = async (prompt, version = 'v1beta') => {
-                const apiURL = `https://generativelanguage.googleapis.com/${version}/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`;
-                
-                const response = await fetch(apiURL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: prompt }] }]
-                    })
-                });
-
-                const result = await response.json();
-
-                if (!response.ok) {
-                    // v1beta에서 실패하면 v1으로 자동 스위칭하여 재시도 (1회 한정)
-                    if (version === 'v1beta') {
-                        console.log("Switching to v1 API...");
-                        return callGeminiAI(prompt, 'v1');
-                    }
-                    throw new Error(result.error?.message || "서버 통신 실패");
-                }
-
-                return result;
+            // HTML 태그를 제거하여 AI가 읽기 편하게 만드는 함수
+            const cleanHTML = (html) => {
+                const div = document.createElement("div");
+                div.innerHTML = html;
+                return div.textContent || div.innerText || "";
             };
 
             const generateQuiz = async () => {
                 if (!selectedUnit) return;
-                
-                // 1. UI 강제 업데이트를 위해 의도적인 딜레이 부여
                 setLoading(true);
-                setStatus({ type: 'info', text: "AI가 자료를 분석 중입니다..." });
-                await new Promise(resolve => setTimeout(resolve, 100)); 
+                setStatus({ type: 'info', text: "AI 선생님이 자료를 분석 중입니다..." });
                 
                 try {
-                    // 2. 깃허브 원문 읽기
+                    // 1. 깃허브에서 원본 HTML 읽기
                     let textResponse = await fetch(selectedUnit.rawUrl);
                     if (!textResponse.ok) {
                         textResponse = await fetch(selectedUnit.rawUrl.replace('/main/', '/master/'));
                     }
-                    const rawContent = await textResponse.text();
+                    if (!textResponse.ok) throw new Error("GitHub 파일을 읽는 데 실패했습니다.");
+                    const htmlContent = await textResponse.text();
+                    
+                    // 2. HTML 태그 제거 (데이터 최적화)
+                    const plainText = cleanHTML(htmlContent).substring(0, 10000);
 
                     // 3. 지침 구성
-                    const prompt = `보건간호과 선생님입니다. 다음 자료를 바탕으로 학생용 5지선다형 퀴즈 5개를 만드세요.
-반드시 아래의 순수한 JSON 데이터 형식으로만 응답하세요. 다른 설명은 생략하세요.
+                    const prompt = `당신은 보건간호과 선생님입니다. 
+다음 제공된 학습 자료를 분석하여 5지선다형 퀴즈 5개를 만드세요.
+반드시 아래의 순수한 JSON 데이터 형식으로만 응답하고, 다른 부연 설명은 하지 마세요.
 
-[학습 자료]
-${rawContent.substring(0, 10000)}
+[학습 자료 내용]
+${plainText}
 
-[형식 가이드]
-[{"id":1,"question":"문제","options":["1","2","3","4","5"],"correctAnswer":0,"explanation":"해설"}]`;
+[응답 형식 예시 - 반드시 준수]
+[{"id":1,"question":"질문","options":["1","2","3","4","5"],"correctAnswer":0,"explanation":"해설"}]`;
 
-                    // 4. 지능형 호출 실행
-                    const result = await callGeminiAI(prompt);
+                    // 4. AI 호출 (자동 재시도 로직 포함)
+                    const callAI = async (modelName) => {
+                        const apiURL = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiApiKey}`;
+                        const response = await fetch(apiURL, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                        });
+                        const data = await response.json();
+                        if (!response.ok) throw new Error(data.error?.message || "AI 응답 오류");
+                        return data;
+                    };
+
+                    let result;
+                    try {
+                        result = await callAI('gemini-1.5-flash');
+                    } catch (e) {
+                        console.log("Retry with latest model...");
+                        result = await callAI('gemini-1.5-flash-latest');
+                    }
 
                     const aiText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (!aiText) throw new Error("AI 대답 없음");
+                    if (!aiText) throw new Error("AI가 응답을 생성하지 못했습니다.");
 
-                    // 5. JSON 추출 및 파싱 강화
+                    // 5. JSON 추출 및 파싱 (최강의 필터링)
                     const startIdx = aiText.indexOf('[');
                     const endIdx = aiText.lastIndexOf(']') + 1;
-                    if (startIdx === -1) throw new Error("데이터 형식이 올바르지 않습니다.");
+                    if (startIdx === -1 || endIdx <= startIdx) throw new Error("정답 데이터 형식이 올바르지 않습니다.");
                     
                     const cleanJson = aiText.substring(startIdx, endIdx);
-                    const parsedData = JSON.parse(cleanJson);
+                    const parsedQuestions = JSON.parse(cleanJson);
                     
-                    setCurrentQuestions(parsedData);
+                    setCurrentQuestions(parsedQuestions);
                     setCurrentQuestionIndex(0); 
                     setAnswers({}); 
                     setView('quiz'); 
                     setStartTime(Date.now()); 
                     setStatus(null);
                 } catch (err) { 
-                    console.error("Final Debug Log:", err);
-                    setStatus({ type: 'error', text: `죄송합니다. 서버가 혼잡해요. 다시 한번 눌러주세요!` }); 
+                    console.error("Critical AI Error:", err);
+                    setStatus({ type: 'error', text: `오류: ${err.message}. 다시 한번 눌러주세요!` }); 
                 } finally { setLoading(false); }
             };
 
@@ -172,7 +174,7 @@ ${rawContent.substring(0, 10000)}
                 <header className="bg-white/90 backdrop-blur-md border-b border-blue-100 px-6 py-4 flex justify-between items-center sticky top-0 z-50 shrink-0 shadow-sm">
                     <div className="flex items-center gap-2 cursor-pointer" onClick={() => { setView('landing'); setStatus(null); }}>
                         <div className="bg-blue-500 p-2 rounded-2xl text-white shadow-lg"><Icon name="github" size={20} /></div>
-                        <h1 className="text-lg font-black text-blue-600 tracking-tighter leading-none italic">EduQuiz <span className="text-teal-400 not-italic uppercase text-[10px]">v5.0</span></h1>
+                        <h1 className="text-lg font-black text-blue-600 tracking-tighter leading-none italic">EduQuiz <span className="text-teal-400 not-italic uppercase text-[10px]">v5.1</span></h1>
                     </div>
                     {status && (
                         <div className={`fixed top-20 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl font-bold text-[10px] z-[200] animate-bounce border-2 ${status.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-500' : 'bg-blue-50 border-blue-200 text-blue-500'}`}>
@@ -187,10 +189,10 @@ ${rawContent.substring(0, 10000)}
                 <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
                     <div className="bg-white p-12 rounded-[5rem] shadow-2xl border-8 border-blue-50 w-full max-w-sm relative overflow-hidden">
                         <div className="bg-blue-500 w-20 h-20 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 text-white shadow-xl shadow-blue-100 animate-pulse">
-                            <Icon name="zap" size={40} fill="currentColor" />
+                            <Icon name="rocket" size={40} fill="currentColor" />
                         </div>
-                        <h2 className="text-4xl font-black mb-4 text-slate-800 leading-tight tracking-tighter text-center">간호의 기초<br/><span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-teal-400">GitHub AI 퀴즈</span></h2>
-                        <p className="text-slate-400 font-bold mb-14 text-[10px] tracking-[0.3em] uppercase italic opacity-70 leading-none text-center">Indestructible v5.0 ✨</p>
+                        <h2 className="text-4xl font-black mb-4 text-slate-800 leading-tight tracking-tighter text-center">간호의 기초<br/><span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-teal-400 text-center">GitHub AI 퀴즈</span></h2>
+                        <p className="text-slate-400 font-bold mb-14 text-[10px] tracking-[0.3em] uppercase italic opacity-70 leading-none text-center">Final Recovery v5.1 ✨</p>
                         <button onClick={() => setView('student_setup')} className="w-full blue-gradient p-7 rounded-[2.5rem] text-white font-black flex items-center justify-center gap-4 transition-all shadow-xl shadow-blue-100 active:scale-95 text-center">
                             <Icon name="play" fill="currentColor" /> 학습 시작하기
                         </button>
@@ -210,7 +212,7 @@ ${rawContent.substring(0, 10000)}
                                     {units.length === 0 ? (
                                         <div className="text-center py-20 text-slate-300 font-bold italic text-center">자료를 불러오는 중입니다...</div>
                                     ) : units.map(u => (
-                                        <button key={u.id} onClick={() => setSelectedUnit(u)} className={`text-left px-6 py-5 rounded-[2.2rem] border-4 transition-all font-bold flex items-center justify-between group ${selectedUnit?.id === u.id ? 'border-blue-300 bg-blue-50 text-blue-600 shadow-lg' : 'border-slate-50 bg-slate-50/50 hover:border-pink-100 shadow-sm'}`}>
+                                        <button key={u.id} onClick={() => setSelectedUnit(u)} className={`text-left px-6 py-5 rounded-[2.2rem] border-4 transition-all font-bold flex items-center justify-between group ${selectedUnit?.id === u.id ? 'border-blue-300 bg-blue-50 text-blue-600 shadow-lg' : 'border-slate-50 bg-slate-50/50 hover:border-blue-100 shadow-sm'}`}>
                                             <span className="text-left">{u.title}</span>
                                             {selectedUnit?.id === u.id && <Icon name="check" className="text-blue-500" size={18}/>}
                                         </button>
@@ -248,7 +250,7 @@ ${rawContent.substring(0, 10000)}
                         </main>
                         <footer className="p-8 border-t border-blue-50 bg-white shrink-0 text-center flex flex-col items-center">
                             <div className="max-w-lg w-full flex gap-4 text-center">
-                                <button disabled={currentQuestionIndex === 0} onClick={() => setCurrentQuestionIndex(p => p - 1)} className="flex-1 py-5 bg-slate-50 text-slate-300 font-black text-sm uppercase rounded-2xl">이전</button>
+                                <button disabled={currentQuestionIndex === 0} onClick={() => setCurrentQuestionIndex(p => p - 1)} className="flex-1 py-5 bg-slate-50 text-slate-300 font-bold rounded-2xl text-center">이전</button>
                                 {currentQuestionIndex === currentQuestions.length - 1 ? 
                                     <button onClick={() => { const s = currentQuestions.filter((q, i) => answers[i] === q.correctAnswer).length; setQuizResults({ score: s, total: currentQuestions.length, percentage: Math.round((s/currentQuestions.length)*100) }); setView('result'); }} disabled={answers[currentQuestionIndex] === undefined} className="flex-[2] blue-gradient text-white py-5 rounded-[2rem] font-black text-xl shadow-lg active:scale-95 text-center">결과 확인</button> :
                                     <button onClick={() => setCurrentQuestionIndex(p => p + 1)} disabled={answers[currentQuestionIndex] === undefined} className="flex-[2] bg-slate-800 text-white py-5 rounded-[2rem] font-black text-xl active:scale-95 text-center">다음 문제</button>
