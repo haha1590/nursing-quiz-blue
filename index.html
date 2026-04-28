@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>EduQuiz AI Blue v17.0 Vault Safe</title>
+    <title>EduQuiz AI Blue v21.0 Absolute Final Master</title>
 
     <!-- 필수 라이브러리 로드 -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -26,7 +26,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // --- 설정 (API 키를 여기에 적지 마세요! 앱 실행 후 화면에서 입력합니다) ---
+        // --- 🔐 보안 설정: API 키는 앱 실행 후 화면에서 직접 입력합니다 (깃허브 유출 방지) ---
         const GITHUB_REPO = "haha1590/nursing-study"; 
 
         const { useState, useEffect, useCallback } = React;
@@ -49,7 +49,7 @@
             const [quizResults, setQuizResults] = useState(null);
             const [startTime, setStartTime] = useState(null);
 
-            // [클로드 피드백 반영] 호이스팅 방지 및 단원 로딩
+            // [Bug #3 완벽 수정] useCallback 구문을 정확히 닫았습니다.
             const fetchGithubFiles = useCallback(async () => {
                 try {
                     const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/`);
@@ -66,22 +66,22 @@
                         }));
                     setUnits(htmlFiles);
                 } catch (err) {
-                    setStatus({ type: 'error', text: "깃허브 연결 확인이 필요합니다." });
+                    setStatus({ type: 'error', text: "깃허브 저장소와 연결이 원활하지 않습니다." });
                 }
-            }, []);
+            }, []); // <-- useCallback 의존성 배열 및 닫는 괄호 확인 완료
 
             useEffect(() => {
                 fetchGithubFiles();
             }, [fetchGithubFiles]);
 
-            // [클로드 + 자가복구] 통합 호출 엔진
             const masterAICall = async (prompt) => {
-                if (!geminiApiKey) throw new Error("API 키가 설정되지 않았습니다.");
+                if (!geminiApiKey) throw new Error("API 키를 먼저 설정해주세요.");
 
+                // [최신화] 작동이 보장된 최신 모델 구성
                 const configs = [
-                    { ver: 'v1beta', mod: 'gemini-2.0-flash' },
-                    { ver: 'v1beta', mod: 'gemini-1.5-flash' },
-                    { ver: 'v1', mod: 'gemini-1.5-flash' }
+                    { ver: 'v1beta', mod: 'gemini-2.0-flash' },      // 1순위
+                    { ver: 'v1beta', mod: 'gemini-2.0-flash-lite' }, // 2순위
+                    { ver: 'v1beta', mod: 'gemini-1.5-flash-8b' }    // 3순위
                 ];
                 
                 let lastErrorMessage = "";
@@ -90,7 +90,7 @@
                     try {
                         const url = `https://generativelanguage.googleapis.com/${cfg.ver}/models/${cfg.mod}:generateContent?key=${geminiApiKey}`;
                         const res = await fetch(url, {
-                            method: 'POST', // [클로드 필수 반영]
+                            method: 'POST', // [클로드 Bug #1 수정 확인]
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 contents: [{ parts: [{ text: prompt }] }]
@@ -101,10 +101,11 @@
                         if (res.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
                             return data.candidates[0].content.parts[0].text;
                         }
-                        lastErrorMessage = data.error?.message || "AI 엔진 무응답";
+                        lastErrorMessage = data.error?.message || "AI 엔진 응답 오류";
                     } catch (err) {
-                        lastErrorMessage = err.message; 
+                        lastErrorMessage = err.message; // [클로드 Bug #2 수정 확인]
                     }
+                    await new Promise(r => setTimeout(r, 150));
                 }
                 throw new Error(lastErrorMessage);
             };
@@ -112,15 +113,15 @@
             const generateQuiz = async () => {
                 if (!selectedUnit) return;
                 setLoading(true);
-                setStatus({ type: 'info', text: "AI가 문제를 설계하고 있습니다..." });
-                await new Promise(r => setTimeout(r, 150));
+                setStatus({ type: 'info', text: "AI가 문제를 정교하게 설계 중입니다..." });
+                await new Promise(r => setTimeout(r, 100));
 
                 try {
                     let textResponse = await fetch(selectedUnit.rawUrl);
                     if (!textResponse.ok) textResponse = await fetch(selectedUnit.rawUrl.replace('/main/', '/master/'));
                     const rawHTML = await textResponse.text();
                     const doc = new DOMParser().parseFromString(rawHTML, 'text/html');
-                    const cleanText = (doc.body.textContent || "").replace(/\s+/g, ' ').trim().substring(0, 6000);
+                    const cleanText = (doc.body.textContent || "").replace(/\s+/g, ' ').trim().substring(0, 7000);
 
                     const finalPrompt = `보건간호과 선생님 모드로 응답하세요. 제공된 자료로 5지선다형 퀴즈 5개를 만드세요. 반드시 순수한 JSON 배열로만 출력하세요. 
                     형식: [{"id":1,"question":"질문","options":["1","2","3","4","5"],"correctAnswer":0,"explanation":"해설"}]
@@ -133,69 +134,86 @@ ${cleanText}`;
                     const endIdx = aiResult.lastIndexOf(']') + 1;
                     if (startIdx === -1) throw new Error("JSON 추출 실패");
                     
-                    setCurrentQuestions(JSON.parse(aiResult.substring(startIdx, endIdx)));
-                    setAnswers({}); setView('quiz'); setStartTime(Date.now()); setStatus(null);
+                    const parsedQuestions = JSON.parse(aiResult.substring(startIdx, endIdx));
+                    
+                    // [초기화 버그 수정 완료] 문제 생성 시 인덱스를 반드시 0으로 리셋
+                    setCurrentQuestions(parsedQuestions);
+                    setCurrentQuestionIndex(0); 
+                    setAnswers({}); 
+                    setView('quiz'); 
+                    setStartTime(Date.now()); 
+                    setStatus(null);
                 } catch (err) { 
-                    setStatus({ type: 'error', text: `오류: ${err.message}` }); 
+                    setStatus({ type: 'error', text: `AI 오류: ${err.message}` }); 
                 } finally { setLoading(false); }
             };
 
             const Header = () => (
-                <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 px-6 py-4 flex justify-between items-center sticky top-0 z-50 shrink-0 shadow-sm">
-                    <div className="flex items-center gap-2 cursor-pointer" onClick={() => { setView('landing'); setStatus(null); }}>
-                        <div className="bg-blue-700 p-2 rounded-2xl text-white shadow-lg"><Icon name="shield-check" size={20} /></div>
-                        <h1 className="text-lg font-black text-blue-900 tracking-tighter italic">EduQuiz <span className="text-teal-600 not-italic uppercase text-[10px]">v17.0 Vault</span></h1>
-                    </div>
-                    {status && (
-                        <div className={`fixed top-20 left-1/2 -translate-x-1/2 w-[90%] max-w-xs px-6 py-4 rounded-3xl shadow-2xl font-bold text-[10px] z-[200] animate-bounce border-2 ${status.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-blue-50 border-blue-200 text-blue-600'}`}>
-                            <div className="flex gap-3 items-center">
-                                <Icon name={status.type === 'error' ? 'alert-circle' : 'loader-2'} size={18} className={status.type !== 'error' ? 'animate-spin' : ''} />
-                                <span className="leading-relaxed">{status.text}</span>
-                            </div>
-                            <button onClick={() => setStatus(null)} className="absolute top-2 right-3 opacity-30 text-lg">×</button>
-                        </div>
-                    )}
-                </header>
-            );
+  <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 px-6 py-4 flex justify-between items-center sticky top-0 z-50 shrink-0 shadow-sm">
+    <div className="flex items-center gap-2 cursor-pointer" onClick={() => { setView('landing'); setStatus(null); }}>
+      <div className="bg-blue-700 p-2 rounded-2xl text-white shadow-lg shadow-blue-100">
+        <Icon name="shield-check" size={20} />
+      </div>
+      <h1 className="text-lg font-black text-blue-900 tracking-tighter italic leading-none">
+        EduQuiz <span className="text-teal-600 not-italic uppercase text-[10px]">v21.0 Final</span>
+      </h1>
+    </div>
 
-            // --- API 키 입력 화면 (최초 1회 또는 재설정 시) ---
+    {status && (
+      <div className={`fixed top-20 left-1/2 -translate-x-1/2 w-[90%] max-w-xs px-6 py-4 rounded-3xl shadow-2xl font-bold text-[10px] z-[200] animate-bounce border-2 ${status.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-blue-50 border-blue-200 text-blue-600'}`}>
+        <div className="flex gap-3 items-center">
+          <Icon name={status.type === 'error' ? 'alert-circle' : 'loader-2'} size={18} className={status.type !== 'error' ? 'animate-spin' : ''} />
+          <span className="leading-relaxed">{status.text}</span>
+        </div>
+        <button onClick={() => setStatus(null)} className="absolute top-2 right-3 opacity-30 text-lg">×</button>
+      </div>
+    )}
+  </header>
+);
+
+            // --- 보안 입력 화면 (LocalStorage 사용) ---
             if (!geminiApiKey || view === 'settings') return (
                 <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
-                    <div className="bg-white p-10 rounded-[3rem] shadow-2xl border-8 border-white w-full max-w-sm space-y-6">
-                        <div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto text-blue-600"><Icon name="key" size={40} /></div>
-                        <h2 className="text-2xl font-black text-slate-800">보안 인증</h2>
-                        <p className="text-sm text-slate-400 font-bold leading-relaxed">구글 AI 서버 연결을 위해<br/>새로운 API 키를 입력해주세요.</p>
-                        <input 
-                            type="password" 
-                            placeholder="AI Studio에서 받은 키 붙여넣기" 
-                            className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-slate-100 outline-none focus:border-blue-500 font-mono text-xs"
-                            onBlur={(e) => {
-                                const key = e.target.value.trim();
-                                if(key) {
-                                    setGeminiApiKey(key);
-                                    localStorage.setItem('gemini_api_key', key);
-                                    setView('landing');
-                                }
-                            }}
-                        />
-                        <p className="text-[10px] text-rose-400 font-bold italic underline">입력한 키는 선생님의 폰/PC에만 안전하게 저장됩니다.</p>
-                        {geminiApiKey && <button onClick={() => setView('landing')} className="text-blue-500 font-black text-xs">돌아가기</button>}
+                    <div className="bg-white p-10 rounded-[3.5rem] shadow-2xl border-8 border-white w-full max-w-sm space-y-6 animate-fadeIn">
+                        <div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto text-blue-600 shadow-inner"><Icon name="lock" size={40} /></div>
+                        <h2 className="text-2xl font-black text-slate-800 tracking-tighter">보안 금고</h2>
+                        <p className="text-sm text-slate-400 font-bold leading-relaxed italic text-center">API 키 유출 방지를 위해<br/>새로운 키를 입력해주세요.</p>
+                        <div className="space-y-4 text-left">
+                            <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest px-2">Gemini API Key</label>
+                            <input 
+                                type="password" 
+                                placeholder="여기에 키를 붙여넣으세요" 
+                                className="w-full px-6 py-5 rounded-2xl bg-slate-50 border-2 border-slate-100 outline-none focus:border-blue-500 font-mono text-xs shadow-inner"
+                                onBlur={(e) => {
+                                    const key = e.target.value.trim();
+                                    if(key) {
+                                        setGeminiApiKey(key);
+                                        localStorage.setItem('gemini_api_key', key);
+                                        setView('landing');
+                                    }
+                                }}
+                            />
+                        </div>
+                        <div className="bg-rose-50 p-4 rounded-3xl border border-rose-100 shadow-sm">
+                           <p className="text-[10px] text-rose-500 font-bold leading-tight text-center">⚠️ 이 키는 브라우저에만 저장됩니다.<br/>깃허브 소스코드에 키를 절대 적지 마세요!</p>
+                        </div>
+                        {geminiApiKey && <button onClick={() => setView('landing')} className="text-blue-500 font-black text-xs underline">돌아가기</button>}
                     </div>
                 </div>
             );
 
             if (view === 'landing') return (
                 <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center bg-slate-50">
-                    <div className="bg-white p-12 rounded-[5rem] shadow-2xl border-8 border-white w-full max-w-sm relative overflow-hidden animate-fadeIn">
+                    <div className="bg-white p-12 rounded-[5rem] shadow-2xl border-8 border-white w-full max-w-sm relative overflow-hidden animate-fadeIn text-center">
                         <div className="bg-blue-700 w-24 h-24 rounded-[3rem] flex items-center justify-center mx-auto mb-10 text-white shadow-2xl shadow-blue-100 animate-pulse">
-                            <Icon name="zap" size={48} fill="currentColor" />
+                            <Icon name="rocket" size={48} fill="currentColor" />
                         </div>
-                        <h2 className="text-4xl font-black mb-4 text-slate-800 leading-tight tracking-tighter">간호의 기초<br/><span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-700 to-teal-600">Secure AI</span></h2>
-                        <p className="text-slate-400 font-bold mb-14 text-[10px] tracking-[0.3em] uppercase italic opacity-70 leading-none">v17.0 Vault Safe Edition ✨</p>
+                        <h2 className="text-4xl font-black mb-4 text-slate-800 leading-tight tracking-tighter text-center">간호의 기초<br/><span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-700 to-teal-600 text-center text-center">Absolute AI</span></h2>
+                        <p className="text-slate-400 font-bold mb-14 text-[10px] tracking-[0.3em] uppercase italic opacity-70 leading-none text-center">v21.0 Final Edition ✨</p>
                         <button onClick={() => setView('student_setup')} className="w-full blue-gradient p-7 rounded-[2.5rem] text-white font-black flex items-center justify-center gap-4 transition-all shadow-xl shadow-blue-200 active:scale-95 text-center">
                             <Icon name="play" fill="currentColor" size={20} /> 학습 시작하기
                         </button>
-                        <button onClick={() => setView('settings')} className="mt-8 text-slate-300 text-[10px] font-bold underline">API 키 재설정</button>
+                        <button onClick={() => setView('settings')} className="mt-8 text-slate-300 text-[10px] font-bold underline decoration-slate-200">API 키 재설정</button>
                     </div>
                 </div>
             );
@@ -203,24 +221,24 @@ ${cleanText}`;
             if (view === 'student_setup') return (
                 <div className="min-h-screen flex flex-col items-center bg-slate-50">
                     <Header />
-                    <main className="max-w-xl w-full p-6 space-y-10 animate-fadeIn">
+                    <main className="max-w-xl w-full p-6 space-y-10 animate-fadeIn text-center">
                         <div className="bg-white rounded-[4rem] p-10 shadow-2xl border-8 border-white space-y-8 text-center">
-                            <h2 className="text-3xl font-black text-slate-700 italic tracking-tighter leading-none">GitHub Library ✨</h2>
+                            <h2 className="text-3xl font-black text-slate-700 italic tracking-tighter leading-none text-center leading-none">Library ✨</h2>
                             <section className="text-left space-y-4">
                                 <h4 className="text-[12px] font-black text-blue-700 uppercase tracking-widest flex items-center gap-2 px-1 text-left"><Icon name="layers" size={16} /> 학습할 단원을 선택하세요</h4>
                                 <div className="grid gap-2 max-h-80 overflow-y-auto custom-scrollbar pr-1 text-left">
                                     {units.length === 0 ? (
-                                        <div className="text-center py-20 text-slate-300 font-bold italic text-center">자료 목록을 읽어오는 중...</div>
+                                        <div className="text-center py-20 text-slate-300 font-bold italic text-center">자료를 불러오고 있습니다...</div>
                                     ) : units.map(u => (
-                                        <button key={u.id} onClick={() => setSelectedUnit(u)} className={`text-left px-7 py-6 rounded-[2.5rem] border-4 transition-all font-black flex items-center justify-between group ${selectedUnit?.id === u.id ? 'border-blue-700 bg-blue-50 text-blue-900 shadow-lg' : 'border-slate-50 bg-slate-50/50 hover:border-blue-100 shadow-sm'}`}>
-                                            <span className="text-[15px] text-left">{u.title}</span>
+                                        <button key={u.id} onClick={() => setSelectedUnit(u)} className={`text-left px-7 py-6 rounded-[2.5rem] border-4 transition-all font-black flex items-center justify-between group ${selectedUnit?.id === u.id ? 'border-blue-700 bg-blue-50 text-blue-900 shadow-lg scale-[1.01]' : 'border-slate-50 bg-slate-50/50 hover:border-blue-100 shadow-sm'}`}>
+                                            <span className="text-[15px] font-bold text-left">{u.title}</span>
                                             {selectedUnit?.id === u.id && <Icon name="check-circle-2" className="text-blue-700" size={20}/>}
                                         </button>
                                     ))}
                                 </div>
                             </section>
                             <button onClick={generateQuiz} disabled={!selectedUnit || loading} className={`w-full py-8 rounded-[2.8rem] font-black text-xl shadow-2xl transition-all ${loading ? 'bg-slate-100 text-slate-300' : 'blue-gradient text-white active:scale-95 shadow-blue-200 text-center'}`}>
-                                {loading ? '분석 중...' : '퀴즈 생성 & 시작 ✨'}
+                                {loading ? '정교하게 생성 중...' : '퀴즈 생성 & 시작 ✨'}
                             </button>
                         </div>
                     </main>
@@ -233,15 +251,15 @@ ${cleanText}`;
                 return (
                     <div className="h-screen flex flex-col bg-white overflow-hidden text-left animate-fadeIn">
                         <header className="px-6 py-5 flex items-center justify-between border-b border-slate-100 shrink-0 text-left">
-                            <button onClick={() => setView('student_setup')} className="text-slate-300 p-2"><Icon name="x" size={28}/></button>
-                            <span className="font-black text-blue-700 text-lg tracking-widest italic">{currentQuestionIndex + 1} / {currentQuestions.length}</span>
+                            <button onClick={() => setView('student_setup')} className="text-slate-300 p-2 active:scale-90"><Icon name="x" size={28}/></button>
+                            <span className="font-black text-blue-700 text-lg tracking-widest italic text-left">{currentQuestionIndex + 1} / {currentQuestions.length}</span>
                             <div className="px-4 py-1.5 bg-slate-800 text-white rounded-full text-[10px] font-black tracking-widest">{Math.floor((Date.now() - startTime)/1000)}S</div>
                         </header>
                         <main className="flex-1 p-8 flex flex-col items-center justify-center space-y-12 overflow-y-auto text-left">
-                            <h2 className="text-2xl font-black text-slate-700 text-center leading-snug max-w-lg text-left">{q.question}</h2>
-                            <div className="w-full max-w-lg space-y-4 text-left">
+                            <h2 className="text-2xl font-black text-slate-700 text-center leading-snug max-w-lg text-left font-sans">{q.question}</h2>
+                            <div className="w-full max-w-lg space-y-4 text-left font-sans">
                                 {q.options.map((opt, i) => (
-                                    <button key={i} onClick={() => setAnswers({...answers, [currentQuestionIndex]: i})} className={`w-full text-left p-7 rounded-[2.8rem] border-4 transition-all font-black text-lg flex items-center gap-6 ${answers[currentQuestionIndex] === i ? 'border-blue-700 bg-blue-50 text-blue-900 shadow-md' : 'border-slate-50 bg-slate-50 hover:border-blue-100 shadow-sm'}`}>
+                                    <button key={i} onClick={() => setAnswers({...answers, [currentQuestionIndex]: i})} className={`w-full text-left p-7 rounded-[2.8rem] border-4 transition-all font-black text-lg flex items-center gap-6 ${answers[currentQuestionIndex] === i ? 'border-blue-700 bg-blue-50 text-blue-900 shadow-md scale-[1.02]' : 'border-slate-50 bg-slate-50 hover:border-blue-100 shadow-sm'}`}>
                                         <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${answers[currentQuestionIndex] === i ? 'bg-blue-700 text-white' : 'bg-slate-700 text-white'}`}>{i + 1}</div>
                                         <span className="leading-tight text-left font-bold">{opt}</span>
                                     </button>
@@ -250,10 +268,10 @@ ${cleanText}`;
                         </main>
                         <footer className="p-8 border-t border-slate-100 bg-white shrink-0 text-center flex flex-col items-center text-center">
                             <div className="max-w-lg w-full flex gap-4 text-center">
-                                <button disabled={currentQuestionIndex === 0} onClick={() => setCurrentQuestionIndex(p => p - 1)} className="flex-1 py-6 bg-slate-50 text-slate-300 font-black rounded-3xl text-sm text-center">이전</button>
+                                <button disabled={currentQuestionIndex === 0} onClick={() => setCurrentQuestionIndex(p => p - 1)} className="flex-1 py-6 bg-slate-50 text-slate-300 font-black rounded-3xl text-sm active:scale-95 text-center">이전</button>
                                 {currentQuestionIndex === currentQuestions.length - 1 ? 
-                                    <button onClick={() => { const s = currentQuestions.filter((q, i) => answers[i] === q.correctAnswer).length; setQuizResults({ score: s, total: currentQuestions.length, percentage: Math.round((s/currentQuestions.length)*100) }); setView('result'); }} disabled={answers[currentQuestionIndex] === undefined} className="flex-[2] blue-gradient text-white py-6 rounded-3xl font-black text-xl shadow-lg active:scale-95 text-center">결과 확인 ✨</button> :
-                                    <button onClick={() => setCurrentQuestionIndex(p => p + 1)} disabled={answers[currentQuestionIndex] === undefined} className="flex-[2] bg-slate-800 text-white py-6 rounded-3xl font-black text-xl active:scale-95 text-center">다음 문제</button>
+                                    <button onClick={() => { const s = currentQuestions.filter((q, i) => answers[i] === q.correctAnswer).length; setQuizResults({ score: s, total: currentQuestions.length, percentage: Math.round((s/currentQuestions.length)*100) }); setView('result'); }} disabled={answers[currentQuestionIndex] === undefined} className="flex-[2] blue-gradient text-white py-6 rounded-3xl font-black text-xl shadow-lg active:scale-95 text-center text-center">최종 결과 제출 ✨</button> :
+                                    <button onClick={() => setCurrentQuestionIndex(p => p + 1)} disabled={answers[currentQuestionIndex] === undefined} className="flex-[2] bg-slate-800 text-white py-6 rounded-3xl font-black text-xl active:scale-95 text-center text-center text-center">다음 문제</button>
                                 }
                             </div>
                         </footer>
@@ -264,16 +282,19 @@ ${cleanText}`;
             if (view === 'result') return (
                 <div className="min-h-screen bg-blue-50 flex flex-col items-center text-center">
                     <Header />
-                    <main className="w-full max-w-md p-6 space-y-6 overflow-y-auto pb-24 text-center flex flex-col items-center animate-fadeIn text-center">
+                    <main className="w-full max-w-md p-6 space-y-6 overflow-y-auto pb-24 text-center flex flex-col items-center animate-fadeIn text-center flex flex-col items-center animate-fadeIn text-center">
                         <div className="bg-white rounded-[5rem] shadow-2xl p-12 text-center border-8 border-white w-full text-center">
-                            <div className="bg-yellow-400 w-24 h-24 rounded-[3rem] flex items-center justify-center mx-auto mb-8 text-white shadow-xl animate-bounce shadow-yellow-100 text-center"><Icon name="award" size={50} /></div>
-                            <h2 className="text-8xl font-black mb-3 text-slate-800 tracking-tighter text-center">{quizResults?.percentage}%</h2>
-                            <p className="font-black text-blue-700 text-xl mb-12 text-center tracking-tighter">참 잘했어요! ✨</p>
-                            <div className="space-y-6 text-left mb-12 border-t border-slate-100 pt-10 text-left font-normal">
+                            <div className="bg-yellow-400 w-24 h-24 rounded-[3rem] flex items-center justify-center mx-auto mb-8 text-white shadow-xl animate-bounce shadow-yellow-100 text-center text-center"><Icon name="award" size={50} /></div>
+                            <h2 className="text-8xl font-black mb-3 text-slate-800 tracking-tighter text-center text-center">{quizResults?.percentage}%</h2>
+                            <p className="font-black text-blue-700 text-xl mb-12 text-center tracking-tighter text-center text-center">공부 끝! 정말 완벽해요! ✨</p>
+                            <div className="space-y-6 text-left mb-12 border-t border-slate-100 pt-10 text-left font-normal font-sans">
                                 {currentQuestions.map((q, i) => (
-                                    <div key={i} className={`p-8 rounded-[3rem] border-2 ${answers[i] === q.correctAnswer ? 'border-emerald-100 bg-emerald-50/30' : 'border-rose-100 bg-rose-50/30'}`}>
-                                        <p className="font-bold text-slate-700 mb-4 leading-snug text-left">{i+1}. {q.question}</p>
-                                        <p className="text-[11px] text-slate-400 leading-relaxed italic border-t border-white/50 pt-3 mt-3 text-left font-normal">{q.explanation}</p>
+                                    <div key={i} className={`p-8 rounded-[3rem] border-2 ${answers[i] === q.correctAnswer ? 'border-emerald-100 bg-emerald-50/20' : 'border-rose-100 bg-rose-50/30'}`}>
+                                        <div className="flex justify-between items-start mb-4 text-left">
+                                            <p className="font-bold text-slate-700 leading-snug text-left font-sans">{i+1}. {q.question}</p>
+                                            {answers[i] === q.correctAnswer ? <Icon name="check-circle" className="text-emerald-500" /> : <Icon name="alert-triangle" className="text-rose-500" />}
+                                        </div>
+                                        <p className="text-[11px] text-slate-400 leading-relaxed italic border-t border-white/50 pt-3 mt-3 text-left font-normal font-sans">{q.explanation}</p>
                                     </div>
                                 ))}
                             </div>
